@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="科研资料智能检索与知识问答系统演示">
+    <title>Research RAG Workspace</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="#" aria-label="Research RAG 首页">
+        <span class="brand-mark">R</span>
+        <span><strong>Research RAG</strong><small>Knowledge Workspace</small></span>
+    </a>
+    <nav class="view-tabs" aria-label="主视图">
+        <button class="tab active" data-view="chat"><i data-lucide="messages-square"></i><span>问答</span></button>
+        <button class="tab" data-view="debug"><i data-lucide="scan-search"></i><span>检索调试</span></button>
+        <button class="tab" data-view="documents"><i data-lucide="files"></i><span>文档</span></button>
+    </nav>
+    <div class="top-actions">
+        <span class="status"><span class="status-dot"></span>Local Demo</span>
+        <button class="icon-button" id="memoryButton" title="管理长期记忆" aria-label="管理长期记忆"><i data-lucide="brain"></i></button>
+        <button class="icon-button" id="clearButton" title="清空当前会话" aria-label="清空当前会话"><i data-lucide="rotate-ccw"></i></button>
+    </div>
+</header>
+
+<main>
+    <section class="view active" id="chatView">
+        <aside class="knowledge-panel">
+            <div class="panel-heading">
+                <div><span class="eyebrow">KNOWLEDGE BASE</span><h2>科研知识库</h2></div>
+                <button class="icon-button small" id="uploadButton" title="上传文档" aria-label="上传文档"><i data-lucide="file-up"></i></button>
+            </div>
+            <div class="metrics" aria-label="知识库指标">
+                <div><strong id="docCount">-</strong><span>文档</span></div>
+                <div><strong id="chunkCount">-</strong><span>语义块</span></div>
+                <div><strong>Top 5</strong><span>召回</span></div>
+            </div>
+            <div class="section-label">检索配置</div>
+            <dl class="config-list">
+                <div><dt>检索策略</dt><dd>BM25 + Dense</dd></div>
+                <div><dt>融合权重</dt><dd>0.42 / 0.58</dd></div>
+                <div><dt>向量模式</dt><dd>Hash 384d</dd></div>
+                <div><dt>回答模式</dt><dd>证据抽取</dd></div>
+            </dl>
+            <div class="section-label">已索引资料</div>
+            <div class="document-list compact" id="sidebarDocuments"></div>
+            <button class="secondary-button full" id="sidebarUploadButton"><i data-lucide="upload"></i>上传资料</button>
+        </aside>
+
+        <section class="conversation-panel">
+            <div class="conversation-heading">
+                <div><span class="eyebrow">SESSION / DEMO-01</span><h1>科研资料智能问答</h1></div>
+                <span class="stream-badge"><i data-lucide="radio"></i>SSE 流式输出</span>
+            </div>
+            <div class="messages" id="messages" aria-live="polite">
+                <div class="welcome">
+                    <div class="welcome-icon"><i data-lucide="sparkles"></i></div>
+                    <h2>从团队资料中获得有依据的答案</h2>
+                    <p>系统会展示查询改写、混合检索得分和引用片段，便于定位答案来源。</p>
+                    <div class="prompt-grid">
+                        <button class="prompt-chip">Redis 缓存穿透如何处理？</button>
+                        <button class="prompt-chip">为什么要使用混合检索？</button>
+                        <button class="prompt-chip">新人提交代码前要做什么？</button>
+                        <button class="prompt-chip">短期记忆如何控制成本？</button>
+                    </div>
+                </div>
+            </div>
+            <form class="composer" id="chatForm">
+                <textarea id="questionInput" rows="1" maxlength="1000" placeholder="询问知识库中的内容..." aria-label="输入问题"></textarea>
+                <button type="submit" class="send-button" id="sendButton" title="发送问题" aria-label="发送问题"><i data-lucide="arrow-up"></i></button>
+                <div class="composer-footer"><span>Enter 发送 · Shift + Enter 换行</span><span id="charCount">0 / 1000</span></div>
+            </form>
+        </section>
+
+        <aside class="evidence-panel">
+            <div class="panel-heading">
+                <div><span class="eyebrow">TRACE</span><h2>回答依据</h2></div>
+                <span class="trace-time" id="traceTime">待运行</span>
+            </div>
+            <div class="trace-empty" id="traceEmpty">
+                <i data-lucide="git-branch"></i>
+                <p>发送问题后，这里会展示完整 RAG 处理链路与召回片段。</p>
+            </div>
+            <div id="traceContent" hidden>
+                <div class="section-label">处理链路</div>
+                <ol class="pipeline" id="pipeline"></ol>
+                <div class="query-rewrite" id="queryRewrite"></div>
+                <div class="section-label">召回证据</div>
+                <div class="evidence-list" id="evidenceList"></div>
+            </div>
+        </aside>
+    </section>
+
+    <section class="view tool-view" id="debugView">
+        <div class="tool-header"><span class="eyebrow">RETRIEVAL LAB</span><h1>检索调试</h1><p>只运行召回链路，不调用回答生成器。</p></div>
+        <form class="debug-form" id="debugForm">
+            <input id="debugInput" value="Redis 缓存穿透" aria-label="调试查询">
+            <button class="primary-button" type="submit"><i data-lucide="search"></i>运行检索</button>
+        </form>
+        <div class="score-legend"><span><i class="dot lexical"></i>BM25</span><span><i class="dot dense"></i>Dense</span><span><i class="dot combined"></i>融合分数</span></div>
+        <div class="debug-results" id="debugResults"></div>
+    </section>
+
+    <section class="view tool-view" id="documentsView">
+        <div class="tool-header row"><div><span class="eyebrow">DOCUMENTS</span><h1>知识库文档</h1><p>查看已解析文档及语义分块数量。</p></div><button class="primary-button" id="documentsUploadButton"><i data-lucide="file-up"></i>上传文档</button></div>
+        <div class="document-table" id="documentTable"></div>
+    </section>
+</main>
+
+<dialog id="uploadDialog">
+    <form class="dialog-form" id="uploadForm">
+        <div class="dialog-heading"><div><span class="eyebrow">INGESTION</span><h2>上传知识库文档</h2></div><button type="button" class="icon-button dialog-close" aria-label="关闭"><i data-lucide="x"></i></button></div>
+        <label class="dropzone" for="fileInput"><i data-lucide="file-up"></i><strong>选择 PDF、Word、Markdown 或文本</strong><span>单个文件不超过 10MB</span><input type="file" id="fileInput" required accept=".pdf,.doc,.docx,.md,.txt"></label>
+        <label>文档类型<select id="documentType"><option>项目资料</option><option>研发规范</option><option>技术方案</option><option>新人培训</option></select></label>
+        <label>所属项目<input id="projectName" value="科研知识库" maxlength="60"></label>
+        <div class="dialog-actions"><button type="button" class="secondary-button dialog-close">取消</button><button class="primary-button" type="submit"><i data-lucide="upload"></i>解析并入库</button></div>
+        <p class="form-status" id="uploadStatus"></p>
+    </form>
+</dialog>
+
+<dialog id="memoryDialog">
+    <form class="dialog-form" id="memoryForm">
+        <div class="dialog-heading"><div><span class="eyebrow">PROFILE MEMORY</span><h2>长期记忆</h2></div><button type="button" class="icon-button memory-close" aria-label="关闭"><i data-lucide="x"></i></button></div>
+        <div class="memory-list" id="memoryList"></div>
+        <label>标签<input id="memoryLabel" placeholder="例如：回答偏好" maxlength="40" required></label>
+        <label>记忆内容<textarea id="memoryContent" rows="3" placeholder="仅保存你主动确认的信息" maxlength="300" required></textarea></label>
+        <div class="dialog-actions"><button type="button" class="secondary-button memory-close">取消</button><button class="primary-button" type="submit"><i data-lucide="plus"></i>添加记忆</button></div>
+    </form>
+</dialog>
+
+<div class="toast" id="toast" role="status"></div>
+<script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

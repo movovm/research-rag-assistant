@@ -1,0 +1,12 @@
+target/
+.m2-repository/
+build-settings.xml
+.idea/
+.vscode/
+*.iml
+.env
+application-local.yml
+data/
+*.log
+Thumbs.db
+.DS_Store

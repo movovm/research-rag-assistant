@@ -1,0 +1,19 @@
+# Copy the values you need into environment variables or application-local.yml.
+# application-local.yml is ignored by Git.
+app:
+  rag:
+    mode: cloud
+    cloud:
+      dashscope-api-key: ${DASHSCOPE_API_KEY}
+      embedding-model: text-embedding-v3
+      chat-model: qwen-plus
+      embedding-dimension: 1024
+      pinecone-api-key: ${PINECONE_API_KEY}
+      pinecone-host: ${PINECONE_HOST}
+      pinecone-namespace: ${PINECONE_NAMESPACE:research-rag}
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}

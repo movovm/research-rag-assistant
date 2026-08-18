@@ -1,0 +1,35 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: research-rag-assistant
+  codec:
+    max-in-memory-size: 10MB
+
+app:
+  rag:
+    mode: ${RAG_MODE:local}
+    top-k: 5
+    dense-weight: 0.58
+    chunk-min-chars: 180
+    chunk-max-chars: 700
+    semantic-threshold: 0.18
+    memory-max-chars: 4000
+    seed-demo-data: true
+    cloud:
+      dashscope-api-key: ${DASHSCOPE_API_KEY:}
+      embedding-model: text-embedding-v3
+      chat-model: qwen-plus
+      embedding-dimension: 1024
+      pinecone-api-key: ${PINECONE_API_KEY:}
+      pinecone-host: ${PINECONE_HOST:}
+      pinecone-namespace: ${PINECONE_NAMESPACE:research-rag}
+
+spring.data.redis:
+  host: ${REDIS_HOST:localhost}
+  port: ${REDIS_PORT:6379}
+
+logging:
+  level:
+    io.github.portfolio.rag: INFO
