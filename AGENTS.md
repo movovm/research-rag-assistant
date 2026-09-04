@@ -2,25 +2,33 @@
 
 ## Purpose
 
-This repository is a public, runnable portfolio for a research-document RAG assistant. Preserve the distinction between local demo behavior and cloud production adapters.
+This repository is migrating into SalesMentor V1: an evidence-based sales conversation review agent. Preserve the distinction between deterministic local adapters and real cloud AI adapters.
 
 ## Architecture rules
 
-- `core` owns business orchestration and retrieval logic.
-- `port` defines infrastructure boundaries.
-- `adapter/local` must run without credentials or external services.
-- `adapter/cloud` may access DashScope, Pinecone, and Redis only when `app.rag.mode=cloud`.
-- `web` exposes REST and SSE; controllers should not implement retrieval logic.
-- Keep retrieval evidence and scores visible in API responses for debugging.
+- Use a Spring Boot modular monolith under the `com.salesmentor` root package.
+- Controllers call application services; domain and agent code must not call MyBatis mappers or concrete cloud clients.
+- MySQL is the source of truth. BM25 and vector indexes are rebuildable derived data.
+- Local adapters must run without AI credentials; cloud adapters may access DashScope, Pinecone, and optional Redis only when enabled.
+- Keep retrieval evidence, metadata, ranks, fallbacks, and execution status visible through debug or trace responses.
+- Long-running extraction and review tasks use bounded executors. SSE transports events but never owns task state.
 
 ## Business rules
 
-- Long-term memory is created only by explicit user action.
-- Preserve the original question even when Query Rewrite is applied.
-- Answers must be grounded in retrieved evidence; return an insufficiency message when evidence is empty.
-- Never log or commit API keys, tokens, passwords, resume contact details, or absolute personal paths.
-- Do not describe the deterministic local hash embedding as an LLM embedding model.
+- LLM extraction structures an existing sales case; it does not prove that a strategy is optimal or effective.
+- Experience follows `GENERATED → VERIFIED → PUBLISHED`; generated output is never automatically published.
+- Only `PUBLISHED + INDEXED` experiences may be retrieved.
+- The Sales Review Agent has exactly two read-only tools: experience search and product-knowledge search.
+- Every knowledge-backed recommendation must cite evidence returned during the current task.
+- Never log or commit API keys, passwords, complete prompts, resume contact details, or unnecessary conversation content.
+- Never describe deterministic Feature Hashing, rule planners, or template reports as LLM output.
+
+## V1 exclusions
+
+Do not add ASR, CRM, role play, multiple agents, a third tool, Kafka, Elasticsearch, MinIO, complex authorization, autonomous internet access, or unbounded ReAct loops.
 
 ## Verification
 
-Run `mvn test` before merging. For UI changes, start with `mvn spring-boot:run`, exercise chat, retrieval debug, document upload, and check desktop plus mobile layouts.
+- Run `mvn verify` before merging.
+- Integration tests use MySQL Testcontainers and Flyway migrations.
+- For UI changes, start the application with MySQL, exercise the review flow, retrieval debug, task recovery, and trace views on desktop and mobile.

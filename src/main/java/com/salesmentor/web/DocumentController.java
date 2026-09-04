@@ -2,17 +2,15 @@ package com.salesmentor.web;
 
 import com.salesmentor.core.DocumentIngestionService;
 import com.salesmentor.domain.DocumentSummary;
-import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.MediaType;
-import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -36,17 +34,10 @@ public class DocumentController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Mono<DocumentSummary> upload(@RequestPart("file") FilePart file,
-                                        @RequestPart(value = "documentType", required = false) String documentType,
-                                        @RequestPart(value = "project", required = false) String project) {
-        return DataBufferUtils.join(file.content()).flatMap(buffer -> {
-            byte[] bytes = new byte[buffer.readableByteCount()];
-            buffer.read(bytes);
-            DataBufferUtils.release(buffer);
-            return Mono.fromCallable(() -> ingestion.ingest(bytes, file.filename(),
-                            valueOr(documentType, "项目资料"), valueOr(project, "科研知识库")))
-                    .subscribeOn(Schedulers.boundedElastic());
-        });
+    public DocumentSummary upload(@RequestPart("file") MultipartFile file,
+                                  @RequestPart(value = "documentType", required = false) String documentType,
+                                  @RequestPart(value = "project", required = false) String project) throws IOException {
+        return ingestion.ingest(file, valueOr(documentType, "项目资料"), valueOr(project, "科研知识库"));
     }
 
     private String valueOr(String value, String fallback) {

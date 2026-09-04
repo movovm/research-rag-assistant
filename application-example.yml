@@ -13,6 +13,10 @@ app:
       pinecone-namespace: ${PINECONE_NAMESPACE:research-rag}
 
 spring:
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/salesmentor?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC}
+    username: ${MYSQL_USER:salesmentor}
+    password: ${MYSQL_PASSWORD:salesmentor}
   data:
     redis:
       host: ${REDIS_HOST:localhost}

@@ -5,27 +5,30 @@ import com.salesmentor.domain.ChatRequest;
 import com.salesmentor.domain.ChatResult;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
-import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import reactor.core.publisher.Flux;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.time.Duration;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
     private final ChatService chatService;
+    private final Executor reviewExecutor;
 
-    public ChatController(ChatService chatService) {
+    public ChatController(ChatService chatService, @Qualifier("reviewExecutor") Executor reviewExecutor) {
         this.chatService = chatService;
+        this.reviewExecutor = reviewExecutor;
     }
 
     @PostMapping
@@ -34,23 +37,33 @@ public class ChatController {
     }
 
     @PostMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<Object>> stream(@Valid @RequestBody ChatRequest request) {
-        return Flux.defer(() -> {
+    public SseEmitter stream(@Valid @RequestBody ChatRequest request) {
+        SseEmitter emitter = new SseEmitter(30_000L);
+        reviewExecutor.execute(() -> sendStream(request, emitter));
+        return emitter;
+    }
+
+    private void sendStream(ChatRequest request, SseEmitter emitter) {
+        try {
             ChatResult result = chatService.chat(request);
-            ServerSentEvent<Object> context = ServerSentEvent.builder((Object) Map.of(
+            emitter.send(SseEmitter.event().name("context").data(Map.of(
                     "originalQuestion", result.originalQuestion(),
                     "rewrittenQuery", result.rewrittenQuery(),
                     "memorySummary", result.memorySummary(),
                     "longTermMemories", result.longTermMemories(),
                     "evidence", result.evidence(),
                     "stages", result.stages()
-            )).event("context").build();
-            Flux<ServerSentEvent<Object>> tokens = Flux.fromIterable(chunks(result.answer(), 8))
-                    .delayElements(Duration.ofMillis(28))
-                    .map(token -> ServerSentEvent.builder((Object) Map.of("token", token)).event("token").build());
-            ServerSentEvent<Object> done = ServerSentEvent.builder((Object) Map.of("answer", result.answer())).event("done").build();
-            return Flux.concat(Flux.just(context), tokens, Flux.just(done));
-        });
+            )));
+            for (String token : chunks(result.answer(), 8)) {
+                emitter.send(SseEmitter.event().name("token").data(Map.of("token", token)));
+            }
+            emitter.send(SseEmitter.event().name("done").data(Map.of("answer", result.answer())));
+            emitter.complete();
+        } catch (IOException exception) {
+            emitter.completeWithError(exception);
+        } catch (RuntimeException exception) {
+            emitter.completeWithError(exception);
+        }
     }
 
     @DeleteMapping("/sessions/{sessionId}")
