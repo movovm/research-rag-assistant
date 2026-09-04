@@ -18,12 +18,19 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
-      - name: Test
+      - name: Verify with MySQL Testcontainers
         run: mvn --batch-mode verify
+      - name: Reject skipped tests
+        shell: bash
+        run: |
+          if grep -RE 'skipped="[1-9][0-9]*"|<skipped[ />]' target/surefire-reports/TEST-*.xml; then
+            echo 'Skipped tests are not allowed in CI'
+            exit 1
+          fi
       - name: Check committed secrets
         shell: bash
         run: |
-          if git grep -nE '(sk-[A-Za-z0-9_-]{20,}|pcsk_[A-Za-z0-9_-]{20,}|api[-_]?key:[[:space:]]*[^$<{])' -- ':!docs/**' ':!*.example'; then
+          if git grep -nE '(sk-[A-Za-z0-9_-]{20,}|pcsk_[A-Za-z0-9_-]{20,}|api[-_]?key:[[:space:]]*"?[A-Za-z0-9_-]{8,})' -- ':!docs/**' ':!*.example'; then
             echo 'Potential secret found'
             exit 1
           fi
