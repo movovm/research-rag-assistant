@@ -29,7 +29,7 @@ import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 class SalesMentorApplicationTest {
     @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4")
@@ -115,6 +115,12 @@ class SalesMentorApplicationTest {
                 .containsExactly("day1-case", SalesCase.Status.IMPORTED);
         assertThat(salesCases.compareAndSetStatus(saved.id(), SalesCase.Status.IMPORTED,
                 SalesCase.Status.EXTRACTING, null)).isTrue();
+        assertThat(salesCases.compareAndSetStatus(saved.id(), SalesCase.Status.IMPORTED,
+                SalesCase.Status.EXTRACTING, null)).isFalse();
+        assertThat(salesCases.findById(saved.id()))
+                .get()
+                .extracting(SalesCase::status, SalesCase::version)
+                .containsExactly(SalesCase.Status.EXTRACTING, 1);
 
         ExperienceUnit experience = experiences.save(new ExperienceUnit(null, saved.id(),
                 ExperienceUnit.ScenarioType.OBJECTION_HANDLING, ExperienceUnit.ObjectionType.PRICE,
@@ -124,6 +130,10 @@ class SalesMentorApplicationTest {
                 ExperienceUnit.ReviewStatus.GENERATED, ExperienceUnit.IndexStatus.NOT_INDEXED,
                 null, "local", "experience-extract-v1", null, null, 0, now, now));
         assertThat(experiences.findByCaseId(saved.id())).extracting(ExperienceUnit::id).contains(experience.id());
+        assertThat(experiences.compareAndSetReviewStatus(experience.id(), ExperienceUnit.ReviewStatus.GENERATED,
+                ExperienceUnit.ReviewStatus.VERIFIED, 0)).isTrue();
+        assertThat(experiences.compareAndSetReviewStatus(experience.id(), ExperienceUnit.ReviewStatus.GENERATED,
+                ExperienceUnit.ReviewStatus.PUBLISHED, 0)).isFalse();
 
         KnowledgeDocument document = knowledge.save(new KnowledgeDocument(null, "产品说明",
                 KnowledgeDocument.DocumentType.PRODUCT_OVERVIEW, "test.md", "产品测试内容", "b".repeat(64),
@@ -136,6 +146,8 @@ class SalesMentorApplicationTest {
                 "验证持久化骨架", ReviewTask.Status.PENDING, null, null, null, null, null, now, now));
         assertThat(reviewTasks.compareAndSetStatus(task.id(), ReviewTask.Status.PENDING,
                 ReviewTask.Status.RUNNING)).isTrue();
+        assertThat(reviewTasks.compareAndSetStatus(task.id(), ReviewTask.Status.PENDING,
+                ReviewTask.Status.RUNNING)).isFalse();
 
         AgentTrace trace = traces.save(new AgentTrace(null, task.id(), 1, AgentTrace.StepType.TASK,
                 null, "{}", "task started", "[]", 0, AgentTrace.Status.SUCCEEDED, null, now));
