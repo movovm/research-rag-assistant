@@ -1,0 +1,3 @@
+package com.salesmentor.experience;
+import com.salesmentor.experience.application.ExperienceExtractor; import com.salesmentor.experience.infrastructure.local.LocalExperienceExtractor; import org.junit.jupiter.api.Test; import static org.assertj.core.api.Assertions.*;
+class LocalExperienceExtractorTest {@Test void isDeterministicAndGroundedWithoutCredentials(){var x=new LocalExperienceExtractor();var c=new ExperienceExtractor.ExtractionCommand(1L,"客户：价格太高。销售：先比较三年总成本。",null,null,null);var a=x.extract(c);assertThat(x.extract(c)).isEqualTo(a);assertThat(c.content()).contains(a.drafts().get(0).evidenceQuote());}}

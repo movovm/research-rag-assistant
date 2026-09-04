@@ -18,6 +18,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.http.*;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MySQLContainer;
@@ -28,7 +31,7 @@ import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @Testcontainers
 class SalesMentorApplicationTest {
     @Container
@@ -67,6 +70,26 @@ class SalesMentorApplicationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired private TestRestTemplate rest;
+
+    @Test
+    void importsAndExtractsGroundedGeneratedExperience() throws Exception {
+        String body = "{\"externalKey\":\"day2-api-case\",\"title\":\"价格异议\",\"sourceType\":\"SYNTHETIC\",\"salesStage\":\"NEGOTIATION\",\"content\":\"客户：价格太高。销售：我们先比较三年的总成本。\"}";
+        ResponseEntity<String> response = rest.postForEntity("/api/v1/cases", new HttpEntity<>(body,
+                new HttpHeaders() {{ setContentType(MediaType.APPLICATION_JSON); }}), String.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        Long id = Long.valueOf(response.getBody().replaceAll(".*\\\"caseId\\\":(\\d+).*", "$1"));
+        SalesCase value = null;
+        for (int i = 0; i < 100; i++) { value = salesCases.findById(id).orElseThrow(); if (value.status() == SalesCase.Status.EXTRACTED) break; Thread.sleep(25); }
+        assertThat(value.status()).isEqualTo(SalesCase.Status.EXTRACTED);
+        String content = value.content();
+        assertThat(experiences.findByCaseId(id)).allSatisfy(e -> {
+            assertThat(e.reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.GENERATED);
+            assertThat(e.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.NOT_INDEXED);
+            assertThat(content.substring(e.evidenceStart(), e.evidenceEnd())).isEqualTo(e.evidenceQuote());
+        });
+    }
 
     @Test
     void completesEndToEndLocalRagFlow() {
