@@ -3,7 +3,7 @@ server:
 
 spring:
   application:
-    name: research-rag-assistant
+    name: salesmentor
   codec:
     max-in-memory-size: 10MB
 
@@ -32,4 +32,4 @@ spring.data.redis:
 
 logging:
   level:
-    io.github.portfolio.rag: INFO
+    com.salesmentor: INFO
