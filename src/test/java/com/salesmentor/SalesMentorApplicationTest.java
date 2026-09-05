@@ -377,6 +377,128 @@ class SalesMentorApplicationTest {
         }
     }
 
+    @Test
+    void concurrentExperienceReviewHasOneWinner() throws Exception {
+        ExperienceUnit generated = saveGeneratedExperience("review-cas-" + System.nanoTime());
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        CyclicBarrier barrier = new CyclicBarrier(3);
+        try {
+            Callable<Boolean> verify = () -> {
+                barrier.await();
+                return experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                        42L, LocalDateTime.now().withNano(0), 0);
+            };
+            Callable<Boolean> reject = () -> {
+                barrier.await();
+                return experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.REJECTED,
+                        43L, LocalDateTime.now().withNano(0), 0);
+            };
+            Future<Boolean> verified = callers.submit(verify);
+            Future<Boolean> rejected = callers.submit(reject);
+            barrier.await();
+
+            assertThat(List.of(verified.get(1, TimeUnit.SECONDS), rejected.get(1, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+            ExperienceUnit reviewed = experiences.findById(generated.id()).orElseThrow();
+            assertThat(reviewed.reviewStatus()).isIn(ExperienceUnit.ReviewStatus.VERIFIED,
+                    ExperienceUnit.ReviewStatus.REJECTED);
+            assertThat(reviewed.reviewedBy()).isEqualTo(
+                    reviewed.reviewStatus() == ExperienceUnit.ReviewStatus.VERIFIED ? 42L : 43L);
+            assertThat(reviewed.reviewedAt()).isNotNull();
+            assertThat(reviewed.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.NOT_INDEXED);
+            assertThat(reviewed.version()).isEqualTo(1);
+        } finally {
+            callers.shutdownNow();
+        }
+    }
+
+    @Test
+    void verifiesGeneratedExperienceThroughApi() {
+        ExperienceUnit generated = saveGeneratedExperience("review-verify-" + System.nanoTime());
+
+        ResponseEntity<ExperienceUnit> response = rest.postForEntity(
+                "/api/v1/experiences/{id}/review:verify", reviewRequest("{\"reviewedBy\":42}"),
+                ExperienceUnit.class, generated.id());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.VERIFIED);
+        assertThat(response.getBody().reviewedBy()).isEqualTo(42L);
+        assertThat(response.getBody().reviewedAt()).isNotNull();
+        assertThat(response.getBody().indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.NOT_INDEXED);
+    }
+
+    @Test
+    void rejectsGeneratedExperienceThroughApi() {
+        ExperienceUnit generated = saveGeneratedExperience("review-reject-" + System.nanoTime());
+
+        ResponseEntity<ExperienceUnit> response = rest.postForEntity(
+                "/api/v1/experiences/{id}/review:reject", reviewRequest("{\"reviewedBy\":43}"),
+                ExperienceUnit.class, generated.id());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.REJECTED);
+        assertThat(response.getBody().reviewedBy()).isEqualTo(43L);
+        assertThat(response.getBody().reviewedAt()).isNotNull();
+        assertThat(response.getBody().indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.NOT_INDEXED);
+    }
+
+    @Test
+    void rejectsRepeatExperienceReviewThroughApiWithoutOverwritingMetadata() {
+        ExperienceUnit generated = saveGeneratedExperience("review-conflict-" + System.nanoTime());
+        ResponseEntity<ExperienceUnit> verified = rest.postForEntity(
+                "/api/v1/experiences/{id}/review:verify", reviewRequest("{\"reviewedBy\":42}"),
+                ExperienceUnit.class, generated.id());
+        ExperienceUnit before = verified.getBody();
+
+        ResponseEntity<String> response = rest.postForEntity(
+                "/api/v1/experiences/{id}/review:reject", reviewRequest("{\"reviewedBy\":43}"),
+                String.class, generated.id());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("EXPERIENCE_STATE_CONFLICT");
+        assertThat(before).isNotNull();
+        assertThat(experiences.findById(generated.id())).get()
+                .extracting(ExperienceUnit::reviewStatus, ExperienceUnit::reviewedBy,
+                        ExperienceUnit::reviewedAt, ExperienceUnit::version)
+                .containsExactly(before.reviewStatus(), before.reviewedBy(), before.reviewedAt(), before.version());
+    }
+
+    @Test
+    void returnsNotFoundForUnknownExperienceReview() {
+        ResponseEntity<String> response = rest.postForEntity(
+                "/api/v1/experiences/{id}/review:verify", reviewRequest("{\"reviewedBy\":42}"),
+                String.class, Long.MAX_VALUE);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).contains("EXPERIENCE_NOT_FOUND");
+    }
+
+    @Test
+    void rejectsInvalidReviewedByThroughApiWithoutChangingExperience() {
+        for (String request : List.of("{}", "{\"reviewedBy\":0}", "{\"reviewedBy\":-1}")) {
+            ExperienceUnit generated = saveGeneratedExperience("review-invalid-" + System.nanoTime());
+
+            ResponseEntity<String> response = rest.postForEntity(
+                    "/api/v1/experiences/{id}/review:verify", reviewRequest(request),
+                    String.class, generated.id());
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(experiences.findById(generated.id())).get()
+                    .extracting(ExperienceUnit::reviewStatus, ExperienceUnit::reviewedBy,
+                            ExperienceUnit::reviewedAt, ExperienceUnit::indexStatus, ExperienceUnit::version)
+                    .containsExactly(ExperienceUnit.ReviewStatus.GENERATED, null, null,
+                            ExperienceUnit.IndexStatus.NOT_INDEXED, 0);
+        }
+    }
+
+    private HttpEntity<String> reviewRequest(String body) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        return new HttpEntity<>(body, headers);
+    }
+
     private ExperienceUnit saveGeneratedExperience(String externalKey) {
         LocalDateTime now = LocalDateTime.now().withNano(0);
         SalesCase salesCase = salesCases.save(new SalesCase(null, externalKey, "experience-state-case",

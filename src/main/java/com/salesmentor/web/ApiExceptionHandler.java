@@ -1,5 +1,7 @@
 package com.salesmentor.web;
 
+import com.salesmentor.experience.domain.ExperienceNotFoundException;
+import com.salesmentor.experience.domain.ExperienceStateConflictException;
 import com.salesmentor.salescase.domain.CaseStateConflictException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -13,6 +15,20 @@ import java.util.UUID;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(ExperienceStateConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, Object> experienceConflict(ExperienceStateConflictException exception) {
+        return Map.of("code", "EXPERIENCE_STATE_CONFLICT", "message", safeMessage(exception),
+                "requestId", UUID.randomUUID().toString(), "details", Map.of());
+    }
+
+    @ExceptionHandler(ExperienceNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Map<String, Object> experienceNotFound(ExperienceNotFoundException exception) {
+        return Map.of("code", "EXPERIENCE_NOT_FOUND", "message", safeMessage(exception),
+                "requestId", UUID.randomUUID().toString(), "details", Map.of());
+    }
+
     @ExceptionHandler(CaseStateConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public Map<String, Object> conflict(CaseStateConflictException exception) {
