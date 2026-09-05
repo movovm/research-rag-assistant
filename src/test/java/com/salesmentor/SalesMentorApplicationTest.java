@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @Testcontainers
@@ -241,10 +242,10 @@ class SalesMentorApplicationTest {
                 ExperienceUnit.ReviewStatus.GENERATED, ExperienceUnit.IndexStatus.NOT_INDEXED,
                 null, "local", "experience-extract-v1", null, null, 0, now, now));
         assertThat(experiences.findByCaseId(saved.id())).extracting(ExperienceUnit::id).contains(experience.id());
-        assertThat(experiences.compareAndSetReviewStatus(experience.id(), ExperienceUnit.ReviewStatus.GENERATED,
-                ExperienceUnit.ReviewStatus.VERIFIED, 0)).isTrue();
-        assertThat(experiences.compareAndSetReviewStatus(experience.id(), ExperienceUnit.ReviewStatus.GENERATED,
-                ExperienceUnit.ReviewStatus.PUBLISHED, 0)).isFalse();
+        assertThat(experiences.completeReview(experience.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                1L, now, 0)).isTrue();
+        assertThat(experiences.completeReview(experience.id(), ExperienceUnit.ReviewStatus.REJECTED,
+                2L, now, 0)).isFalse();
 
         KnowledgeDocument document = knowledge.save(new KnowledgeDocument(null, "产品说明",
                 KnowledgeDocument.DocumentType.PRODUCT_OVERVIEW, "test.md", "产品测试内容", "b".repeat(64),
@@ -286,5 +287,107 @@ class SalesMentorApplicationTest {
         } finally {
             callers.shutdownNow();
         }
+    }
+
+    @Test
+    void experienceStateCasPersistsReviewAndPublishFields() {
+        ExperienceUnit generated = saveGeneratedExperience("experience-state-" + System.nanoTime());
+        LocalDateTime reviewedAt = LocalDateTime.now().withNano(0);
+
+        assertThatThrownBy(() -> experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                null, reviewedAt, 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, null, 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(experiences.findById(generated.id())).get()
+                .extracting(ExperienceUnit::reviewStatus, ExperienceUnit::version)
+                .containsExactly(ExperienceUnit.ReviewStatus.GENERATED, 0);
+
+        assertThat(experiences.completePublishing(generated.id(), "vector-before-claim", 0)).isFalse();
+        assertThat(experiences.findById(generated.id())).get()
+                .extracting(ExperienceUnit::reviewStatus, ExperienceUnit::indexStatus, ExperienceUnit::version)
+                .containsExactly(ExperienceUnit.ReviewStatus.GENERATED, ExperienceUnit.IndexStatus.NOT_INDEXED, 0);
+
+        assertThat(experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, reviewedAt, 0)).isTrue();
+        ExperienceUnit verified = experiences.findById(generated.id()).orElseThrow();
+        assertThat(verified.reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.VERIFIED);
+        assertThat(verified.reviewedBy()).isEqualTo(42L);
+        assertThat(verified.reviewedAt()).isEqualTo(reviewedAt);
+        assertThat(verified.version()).isEqualTo(1);
+        assertThat(experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.REJECTED,
+                43L, reviewedAt, 1)).isFalse();
+
+        assertThat(experiences.claimIndexing(generated.id(), 1)).isTrue();
+        assertThat(experiences.markIndexFailed(generated.id(), 2)).isTrue();
+        assertThat(experiences.claimIndexing(generated.id(), 3)).isTrue();
+        assertThatThrownBy(() -> experiences.completePublishing(generated.id(), null, 4))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> experiences.completePublishing(generated.id(), "", 4))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> experiences.completePublishing(generated.id(), "   ", 4))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(experiences.findById(generated.id())).get()
+                .extracting(ExperienceUnit::reviewStatus, ExperienceUnit::indexStatus,
+                        ExperienceUnit::vectorRef, ExperienceUnit::version)
+                .containsExactly(ExperienceUnit.ReviewStatus.VERIFIED, ExperienceUnit.IndexStatus.INDEXING,
+                        null, 4);
+        assertThat(experiences.completePublishing(generated.id(), "experience-vector-" + generated.id(), 4)).isTrue();
+
+        ExperienceUnit published = experiences.findById(generated.id()).orElseThrow();
+        assertThat(published.reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.PUBLISHED);
+        assertThat(published.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.INDEXED);
+        assertThat(published.vectorRef()).isEqualTo("experience-vector-" + generated.id());
+        assertThat(published.version()).isEqualTo(5);
+        assertThat(experiences.markIndexFailed(generated.id(), 5)).isFalse();
+
+        ExperienceUnit reviewable = saveGeneratedExperience("experience-reject-" + System.nanoTime());
+        assertThat(experiences.completeReview(reviewable.id(), ExperienceUnit.ReviewStatus.REJECTED,
+                43L, reviewedAt, 0)).isTrue();
+        assertThat(experiences.findById(reviewable.id())).get()
+                .extracting(ExperienceUnit::reviewStatus, ExperienceUnit::reviewedBy,
+                        ExperienceUnit::reviewedAt, ExperienceUnit::version)
+                .containsExactly(ExperienceUnit.ReviewStatus.REJECTED, 43L, reviewedAt, 1);
+        assertThat(experiences.claimIndexing(reviewable.id(), 1)).isFalse();
+    }
+
+    @Test
+    void concurrentExperienceIndexClaimHasOneWinner() throws Exception {
+        ExperienceUnit generated = saveGeneratedExperience("experience-index-cas-" + System.nanoTime());
+        assertThat(experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, LocalDateTime.now().withNano(0), 0)).isTrue();
+
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        CyclicBarrier barrier = new CyclicBarrier(3);
+        try {
+            Callable<Boolean> claim = () -> {
+                barrier.await();
+                return experiences.claimIndexing(generated.id(), 1);
+            };
+            Future<Boolean> first = callers.submit(claim);
+            Future<Boolean> second = callers.submit(claim);
+            barrier.await();
+
+            assertThat(List.of(first.get(1, TimeUnit.SECONDS), second.get(1, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+            assertThat(experiences.findById(generated.id())).get()
+                    .extracting(ExperienceUnit::reviewStatus, ExperienceUnit::indexStatus, ExperienceUnit::version)
+                    .containsExactly(ExperienceUnit.ReviewStatus.VERIFIED, ExperienceUnit.IndexStatus.INDEXING, 2);
+        } finally {
+            callers.shutdownNow();
+        }
+    }
+
+    private ExperienceUnit saveGeneratedExperience(String externalKey) {
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        SalesCase salesCase = salesCases.save(new SalesCase(null, externalKey, "experience-state-case",
+                SalesCase.SourceType.SYNTHETIC, null, "MANUFACTURING", SalesCase.SalesStage.NEGOTIATION,
+                "PURCHASING_MANAGER", "customer needs", SalesCase.Status.EXTRACTED, null, 0, now, now));
+        return experiences.save(new ExperienceUnit(null, salesCase.id(),
+                ExperienceUnit.ScenarioType.OBJECTION_HANDLING, ExperienceUnit.ObjectionType.PRICE,
+                SalesCase.SalesStage.NEGOTIATION, "PURCHASING_MANAGER", "price concern", "compare cost",
+                "what matters", "customer needs", 0, 14, "sales",
+                String.format("%064x", Integer.toUnsignedLong(externalKey.hashCode())),
+                ExperienceUnit.ReviewStatus.GENERATED, ExperienceUnit.IndexStatus.NOT_INDEXED, null,
+                "local", "experience-extract-v1", null, null, 0, now, now));
     }
 }

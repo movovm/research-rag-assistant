@@ -47,13 +47,51 @@ public class MybatisExperienceRepository implements ExperienceRepository {
     }
 
     @Override
-    public boolean compareAndSetReviewStatus(Long id, ExperienceUnit.ReviewStatus expected,
-                                             ExperienceUnit.ReviewStatus target, int version) {
+    public boolean completeReview(Long id, ExperienceUnit.ReviewStatus target, Long reviewedBy,
+                                  LocalDateTime reviewedAt, int version) {
+        if (target != ExperienceUnit.ReviewStatus.VERIFIED && target != ExperienceUnit.ReviewStatus.REJECTED) {
+            throw new IllegalArgumentException("review target must be VERIFIED or REJECTED");
+        }
+        if (reviewedBy == null || reviewedAt == null) {
+            throw new IllegalArgumentException("reviewedBy and reviewedAt are required");
+        }
         UpdateWrapper<ExperienceEntity> update = new UpdateWrapper<>();
-        update.eq("id", id).eq("review_status", expected.name()).eq("version", version)
-                .set("review_status", target.name())
-                .set("updated_at", LocalDateTime.now())
-                .setSql("version = version + 1");
+        update.eq("id", id).eq("review_status", ExperienceUnit.ReviewStatus.GENERATED.name()).eq("version", version)
+                .set("review_status", target.name()).set("reviewed_by", reviewedBy).set("reviewed_at", reviewedAt)
+                .set("updated_at", LocalDateTime.now()).setSql("version = version + 1");
+        return mapper.update(null, update) == 1;
+    }
+
+    @Override
+    public boolean claimIndexing(Long id, int version) {
+        UpdateWrapper<ExperienceEntity> update = new UpdateWrapper<>();
+        update.eq("id", id).eq("review_status", ExperienceUnit.ReviewStatus.VERIFIED.name())
+                .in("index_status", ExperienceUnit.IndexStatus.NOT_INDEXED.name(), ExperienceUnit.IndexStatus.FAILED.name())
+                .eq("version", version).set("index_status", ExperienceUnit.IndexStatus.INDEXING.name())
+                .set("updated_at", LocalDateTime.now()).setSql("version = version + 1");
+        return mapper.update(null, update) == 1;
+    }
+
+    @Override
+    public boolean completePublishing(Long id, String vectorRef, int version) {
+        if (vectorRef == null || vectorRef.isBlank()) {
+            throw new IllegalArgumentException("vectorRef is required");
+        }
+        UpdateWrapper<ExperienceEntity> update = new UpdateWrapper<>();
+        update.eq("id", id).eq("review_status", ExperienceUnit.ReviewStatus.VERIFIED.name())
+                .eq("index_status", ExperienceUnit.IndexStatus.INDEXING.name()).eq("version", version)
+                .set("review_status", ExperienceUnit.ReviewStatus.PUBLISHED.name())
+                .set("index_status", ExperienceUnit.IndexStatus.INDEXED.name()).set("vector_ref", vectorRef)
+                .set("updated_at", LocalDateTime.now()).setSql("version = version + 1");
+        return mapper.update(null, update) == 1;
+    }
+
+    @Override
+    public boolean markIndexFailed(Long id, int version) {
+        UpdateWrapper<ExperienceEntity> update = new UpdateWrapper<>();
+        update.eq("id", id).eq("index_status", ExperienceUnit.IndexStatus.INDEXING.name()).eq("version", version)
+                .set("index_status", ExperienceUnit.IndexStatus.FAILED.name())
+                .set("updated_at", LocalDateTime.now()).setSql("version = version + 1");
         return mapper.update(null, update) == 1;
     }
 }
