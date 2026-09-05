@@ -28,6 +28,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -105,16 +106,31 @@ class SalesMentorApplicationTest {
 
     @Test
     void createsFiveBusinessTablesAndPersistsSalesCase() {
-        Integer tableCount = jdbcTemplate.queryForObject("""
-                SELECT COUNT(*)
+        List<String> businessTables = jdbcTemplate.queryForList("""
+                SELECT table_name
                 FROM information_schema.tables
                 WHERE table_schema = DATABASE()
                   AND table_name REGEXP '^sm_'
-                """, Integer.class);
-        assertThat(tableCount).isEqualTo(5);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sm_sales_case", Integer.class)).isEqualTo(5);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sm_experience_unit", Integer.class)).isEqualTo(10);
-        assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM sm_knowledge_document", Integer.class)).isEqualTo(3);
+                ORDER BY table_name
+                """, String.class);
+        assertThat(businessTables).containsExactly(
+                "sm_agent_trace",
+                "sm_experience_unit",
+                "sm_knowledge_document",
+                "sm_review_task",
+                "sm_sales_case");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM sm_sales_case
+                WHERE id BETWEEN 1001 AND 1005
+                """, Integer.class)).isEqualTo(5);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM sm_experience_unit
+                WHERE id BETWEEN 2001 AND 2010
+                """, Integer.class)).isEqualTo(10);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM sm_knowledge_document
+                WHERE id BETWEEN 3001 AND 3003
+                """, Integer.class)).isEqualTo(3);
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
                 FROM sm_experience_unit experience
