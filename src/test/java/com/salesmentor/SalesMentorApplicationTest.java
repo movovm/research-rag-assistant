@@ -117,6 +117,54 @@ class SalesMentorApplicationTest {
     }
 
     @Test
+    void failedCaseCanBeRetriedThroughApi() throws Exception {
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        SalesCase saved = salesCases.save(new SalesCase(null, "retry-api-" + System.nanoTime(), "retry-case",
+                SalesCase.SourceType.SYNTHETIC, null, "MANUFACTURING", SalesCase.SalesStage.NEGOTIATION,
+                "PURCHASING_MANAGER", "Customer says price is high. Sales compares total cost.",
+                SalesCase.Status.EXTRACT_FAILED, "previous failure", 0, now, now));
+
+        ResponseEntity<Void> retry = rest.postForEntity("/api/v1/cases/{id}/extraction:retry", null,
+                Void.class, saved.id());
+        assertThat(retry.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        SalesCase value = null;
+        for (int i = 0; i < 100; i++) {
+            value = salesCases.findById(saved.id()).orElseThrow();
+            if (value.status() == SalesCase.Status.EXTRACTED) break;
+            Thread.sleep(25);
+        }
+        assertThat(value.status()).isEqualTo(SalesCase.Status.EXTRACTED);
+
+        ResponseEntity<List<ExperienceUnit>> response = rest.exchange(
+                "/api/v1/cases/{id}/experiences", HttpMethod.GET, null,
+                new ParameterizedTypeReference<>() {}, saved.id());
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull().isNotEmpty().allSatisfy(unit -> {
+            assertThat(unit.caseId()).isEqualTo(saved.id());
+            assertThat(unit.reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.GENERATED);
+            assertThat(unit.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.NOT_INDEXED);
+        });
+    }
+
+    @Test
+    void nonFailedCaseRetryIsRejectedThroughApi() {
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        SalesCase saved = salesCases.save(new SalesCase(null, "retry-rejected-" + System.nanoTime(), "retry-case",
+                SalesCase.SourceType.SYNTHETIC, null, "MANUFACTURING", SalesCase.SalesStage.DISCOVERY,
+                "PURCHASING_MANAGER", "customer needs", SalesCase.Status.IMPORTED, null, 0, now, now));
+
+        ResponseEntity<String> response = rest.postForEntity("/api/v1/cases/{id}/extraction:retry", null,
+                String.class, saved.id());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("CASE_STATE_CONFLICT");
+        assertThat(salesCases.findById(saved.id())).get()
+                .extracting(SalesCase::status).isEqualTo(SalesCase.Status.IMPORTED);
+        assertThat(experiences.findByCaseId(saved.id())).isEmpty();
+    }
+
+    @Test
     void completesEndToEndLocalRagFlow() {
         ingestion.ingestText("test-guide.md", "研发规范", "demo",
                 "缓存穿透是请求不存在的数据。可以缓存空值，并给空值设置较短 TTL。布隆过滤器适用于大规模主键集合。");

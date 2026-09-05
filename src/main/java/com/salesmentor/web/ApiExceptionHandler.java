@@ -1,5 +1,6 @@
 package com.salesmentor.web;
 
+import com.salesmentor.salescase.domain.CaseStateConflictException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -12,6 +13,13 @@ import java.util.UUID;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(CaseStateConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Map<String, Object> conflict(CaseStateConflictException exception) {
+        return Map.of("code", "CASE_STATE_CONFLICT", "message", safeMessage(exception),
+                "requestId", UUID.randomUUID().toString(), "details", Map.of());
+    }
+
     @ExceptionHandler({IllegalArgumentException.class, MethodArgumentNotValidException.class, ServerWebInputException.class})
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, Object> badRequest(Exception exception) {
