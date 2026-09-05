@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -240,5 +241,29 @@ class SalesCaseApplicationServiceTest {
             releaseDraft.countDown();
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void rejectedExperienceExecutorMarksCaseSystemBusy() {
+        var cases = mock(com.salesmentor.salescase.domain.SalesCaseRepository.class);
+        var experiences = mock(ExperienceRepository.class);
+        var extractor = mock(ExperienceExtractor.class);
+        var saved = new SalesCase(107L, "u6", "title", SalesCase.SourceType.SYNTHETIC, null, null, null, null,
+                "content", SalesCase.Status.IMPORTED, null, 0, LocalDateTime.now(), LocalDateTime.now());
+        when(cases.save(any())).thenReturn(saved);
+        Executor rejectingExecutor = command -> { throw new RejectedExecutionException(); };
+        var service = new SalesCaseApplicationService(cases, experiences, extractor,
+                new ExperienceSchemaValidator(), new EvidenceGroundingValidator(), rejectingExecutor);
+
+        assertThatThrownBy(() -> service.importCase(saved))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("SYSTEM_BUSY");
+        verify(cases).compareAndSetStatus(107L, SalesCase.Status.IMPORTED,
+                SalesCase.Status.EXTRACT_FAILED, "SYSTEM_BUSY");
+        verify(cases, never()).compareAndSetStatus(eq(107L), eq(SalesCase.Status.IMPORTED),
+                eq(SalesCase.Status.EXTRACTING), any());
+        verify(cases, never()).compareAndSetStatus(eq(107L), eq(SalesCase.Status.EXTRACTING),
+                eq(SalesCase.Status.EXTRACTED), any());
+        verifyNoInteractions(extractor, experiences);
     }
 }
