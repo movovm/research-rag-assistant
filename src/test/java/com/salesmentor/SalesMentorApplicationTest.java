@@ -21,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.http.*;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.MySQLContainer;
@@ -86,11 +87,33 @@ class SalesMentorApplicationTest {
         for (int i = 0; i < 100; i++) { value = salesCases.findById(id).orElseThrow(); if (value.status() == SalesCase.Status.EXTRACTED) break; Thread.sleep(25); }
         assertThat(value.status()).isEqualTo(SalesCase.Status.EXTRACTED);
         String content = value.content();
-        assertThat(experiences.findByCaseId(id)).allSatisfy(e -> {
+        ResponseEntity<List<ExperienceUnit>> experiencesResponse = rest.exchange(
+                "/api/v1/cases/{id}/experiences", HttpMethod.GET, null,
+                new ParameterizedTypeReference<>() {}, id);
+        assertThat(experiencesResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(experiencesResponse.getBody()).isNotNull();
+        assertThat(experiencesResponse.getBody()).isNotEmpty();
+        assertThat(experiencesResponse.getBody()).allSatisfy(e -> {
+            assertThat(e.caseId()).isEqualTo(id);
             assertThat(e.reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.GENERATED);
             assertThat(e.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.NOT_INDEXED);
             assertThat(content.substring(e.evidenceStart(), e.evidenceEnd())).isEqualTo(e.evidenceQuote());
         });
+    }
+
+    @Test
+    void getsCaseByIdWithPersistedStatus() {
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        SalesCase saved = salesCases.save(new SalesCase(null, "get-case-" + System.nanoTime(), "case-query",
+                SalesCase.SourceType.SYNTHETIC, null, "MANUFACTURING", SalesCase.SalesStage.DISCOVERY,
+                "PURCHASING_MANAGER", "customer needs", SalesCase.Status.IMPORTED, null, 0, now, now));
+
+        ResponseEntity<SalesCase> response = rest.getForEntity("/api/v1/cases/{id}", SalesCase.class, saved.id());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().id()).isEqualTo(saved.id());
+        assertThat(response.getBody().status()).isEqualTo(saved.status());
     }
 
     @Test
