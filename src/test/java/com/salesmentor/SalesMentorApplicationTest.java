@@ -29,6 +29,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -191,5 +192,28 @@ class SalesMentorApplicationTest {
         AgentTrace trace = traces.save(new AgentTrace(null, task.id(), 1, AgentTrace.StepType.TASK,
                 null, "{}", "task started", "[]", 0, AgentTrace.Status.SUCCEEDED, null, now));
         assertThat(traces.findByTaskId(task.id())).extracting(AgentTrace::id).containsExactly(trace.id());
+    }
+
+    @Test
+    void concurrentCasOnImportedCaseHasOneWinner() throws Exception {
+        LocalDateTime now = LocalDateTime.now().withNano(0);
+        SalesCase saved = salesCases.save(new SalesCase(null, "cas-concurrency-" + System.nanoTime(), "CAS concurrency",
+                SalesCase.SourceType.SYNTHETIC, null, null, null, null, "content",
+                SalesCase.Status.IMPORTED, null, 0, now, now));
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        CyclicBarrier barrier = new CyclicBarrier(3);
+        try {
+            Callable<Boolean> attempt = () -> { barrier.await(); return salesCases.compareAndSetStatus(saved.id(),
+                    SalesCase.Status.IMPORTED, SalesCase.Status.EXTRACTING, null); };
+            Future<Boolean> first = callers.submit(attempt);
+            Future<Boolean> second = callers.submit(attempt);
+            barrier.await();
+            assertThat(List.of(first.get(1, TimeUnit.SECONDS), second.get(1, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+            assertThat(salesCases.findById(saved.id())).get()
+                    .extracting(SalesCase::status).isEqualTo(SalesCase.Status.EXTRACTING);
+        } finally {
+            callers.shutdownNow();
+        }
     }
 }

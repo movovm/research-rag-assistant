@@ -15,6 +15,80 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class SalesCaseApplicationServiceTest {
+    @Test
+    @Timeout(3)
+    void concurrentRetryAllowsOnlyOneSubmission() throws Exception {
+        var cases = mock(com.salesmentor.salescase.domain.SalesCaseRepository.class);
+        var experiences = mock(ExperienceRepository.class);
+        var extractor = mock(ExperienceExtractor.class);
+        var saved = new SalesCase(106L, "retry-case", "title", SalesCase.SourceType.SYNTHETIC, null, null, null, null,
+                "客户：价格高。销售：先比较成本。", SalesCase.Status.EXTRACT_FAILED, "old", 1, LocalDateTime.now(), LocalDateTime.now());
+        when(cases.findById(106L)).thenReturn(Optional.of(saved));
+        var retryCasWins = new java.util.concurrent.atomic.AtomicBoolean();
+        var retryCasCount = new java.util.concurrent.atomic.AtomicInteger();
+        var extractingCasCount = new java.util.concurrent.atomic.AtomicInteger();
+        var extractedCasCount = new java.util.concurrent.atomic.AtomicInteger();
+        when(cases.compareAndSetStatus(anyLong(), any(), any(), any())).thenAnswer(invocation -> {
+            var expected = invocation.getArgument(1, SalesCase.Status.class);
+            var target = invocation.getArgument(2, SalesCase.Status.class);
+            if (expected == SalesCase.Status.EXTRACT_FAILED && target == SalesCase.Status.IMPORTED) {
+                retryCasCount.incrementAndGet();
+                return retryCasWins.compareAndSet(false, true);
+            }
+            if (expected == SalesCase.Status.IMPORTED && target == SalesCase.Status.EXTRACTING) {
+                extractingCasCount.incrementAndGet();
+                return true;
+            }
+            if (expected == SalesCase.Status.EXTRACTING && target == SalesCase.Status.EXTRACTED) {
+                extractedCasCount.incrementAndGet();
+                return true;
+            }
+            return false;
+        });
+        var extractionStarted = new CountDownLatch(1);
+        var releaseExtraction = new CountDownLatch(1);
+        var valid = new ExperienceExtractor.ExperienceDraft(ExperienceUnit.ScenarioType.OBJECTION_HANDLING,
+                ExperienceUnit.ObjectionType.PRICE, null, null, "客户价格异议", "先比较成本", null, "客户：价格高", null);
+        when(extractor.extract(any())).thenAnswer(invocation -> {
+            extractionStarted.countDown();
+            releaseExtraction.await();
+            return new ExperienceExtractor.ExtractionBatch(List.of(valid));
+        });
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        try {
+            var service = new SalesCaseApplicationService(cases, experiences, extractor,
+                    new ExperienceSchemaValidator(), new EvidenceGroundingValidator(), (Executor) worker);
+            var barrier = new CyclicBarrier(2);
+            var first = callers.submit(() -> { barrier.await(); try { service.retry(106L); return null; } catch (IllegalStateException e) { return e; } });
+            var second = callers.submit(() -> { barrier.await(); try { service.retry(106L); return null; } catch (IllegalStateException e) { return e; } });
+            var firstResult = first.get(1, TimeUnit.SECONDS);
+            var secondResult = second.get(1, TimeUnit.SECONDS);
+            var results = Arrays.asList(firstResult, secondResult);
+            assertThat(results.stream().filter(Objects::isNull).count()).isEqualTo(1);
+            Object loser = results.stream()
+                    .filter(Objects::nonNull)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(loser)
+                    .isInstanceOf(IllegalStateException.class);
+            assertThat((Throwable) loser)
+                    .hasMessage("\u6848\u4F8B\u72B6\u6001\u5DF2\u53D8\u5316");
+            assertThat(extractionStarted.await(1, TimeUnit.SECONDS)).isTrue();
+            releaseExtraction.countDown();
+            worker.submit(() -> null).get(1, TimeUnit.SECONDS);
+            verify(extractor, times(1)).extract(any());
+            verify(experiences, times(1)).save(any());
+            assertThat(retryCasCount).hasValue(2);
+            assertThat(extractingCasCount).hasValue(1);
+            assertThat(extractedCasCount).hasValue(1);
+        } finally {
+            releaseExtraction.countDown();
+            callers.shutdownNow();
+            worker.shutdownNow();
+        }
+    }
+
     @Test void rejectsOnlyInvalidDraftAndPersistsValidDraft() {
         var cases = mock(com.salesmentor.salescase.domain.SalesCaseRepository.class);
         var experiences = mock(ExperienceRepository.class);
