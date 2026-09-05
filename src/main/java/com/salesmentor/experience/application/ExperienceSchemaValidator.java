@@ -1,6 +1,24 @@
 package com.salesmentor.experience.application;
+
 import org.springframework.stereotype.Component;
-@Component public class ExperienceSchemaValidator {
- public void validate(ExperienceExtractor.ExtractionBatch b){if(b==null||b.drafts().size()>5)throw new IllegalArgumentException("抽取结果最多包含 5 个经验单元");for(var d:b.drafts()){if(d==null||d.scenarioType()==null||blank(d.triggerText())||blank(d.strategySummary())||blank(d.evidenceQuote()))throw new IllegalArgumentException("经验单元缺少必填字段");check(d.triggerText(),500);check(d.strategySummary(),1000);check(d.recommendedQuestion(),500);check(d.evidenceQuote(),2000);check(d.applicability(),1000);check(d.customerRole(),64);}}
- private boolean blank(String s){return s==null||s.isBlank();} private void check(String s,int n){if(s!=null&&s.length()>n)throw new IllegalArgumentException("经验字段超过长度限制");}
+
+@Component
+public class ExperienceSchemaValidator {
+    public void validateBatch(ExperienceExtractor.ExtractionBatch batch) {
+        if (batch == null || batch.drafts() == null || batch.drafts().size() > 5)
+            throw new IllegalArgumentException("抽取结果必须包含 0 到 5 个经验单元");
+    }
+    public void validateDraft(ExperienceExtractor.ExperienceDraft draft) {
+        if (draft == null || draft.scenarioType() == null || blank(draft.triggerText())
+                || blank(draft.strategySummary()) || blank(draft.evidenceQuote()))
+            throw new IllegalArgumentException("经验单元缺少必填字段");
+        check(draft.triggerText(), 500); check(draft.strategySummary(), 1000);
+        check(draft.recommendedQuestion(), 500); check(draft.evidenceQuote(), 2000);
+        check(draft.applicability(), 1000); check(draft.customerRole(), 64);
+    }
+    public void validate(ExperienceExtractor.ExtractionBatch batch) {
+        validateBatch(batch); batch.drafts().forEach(this::validateDraft);
+    }
+    private boolean blank(String value) { return value == null || value.isBlank(); }
+    private void check(String value, int max) { if (value != null && value.length() > max) throw new IllegalArgumentException("经验字段超过长度限制"); }
 }
