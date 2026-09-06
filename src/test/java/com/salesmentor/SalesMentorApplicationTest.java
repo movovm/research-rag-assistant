@@ -499,6 +499,54 @@ class SalesMentorApplicationTest {
     }
 
     @Test
+    void completesExperienceLifecycleFromImportThroughReviewAndPublish() throws Exception {
+        String body = "{\"externalKey\":\"lifecycle-api-case-" + System.nanoTime()
+                + "\",\"title\":\"lifecycle\",\"sourceType\":\"SYNTHETIC\","
+                + "\"salesStage\":\"NEGOTIATION\",\"content\":\"Customer says price is high. Sales compares total cost.\"}";
+        ResponseEntity<String> imported = rest.postForEntity("/api/v1/cases", new HttpEntity<>(body,
+                new HttpHeaders() {{ setContentType(MediaType.APPLICATION_JSON); }}), String.class);
+        assertThat(imported.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        Long caseId = Long.valueOf(imported.getBody().replaceAll(".*\\\"caseId\\\":(\\d+).*", "$1"));
+
+        ExperienceUnit generated = null;
+        for (int i = 0; i < 100; i++) {
+            List<ExperienceUnit> units = experiences.findByCaseId(caseId);
+            if (!units.isEmpty()) {
+                generated = units.get(0);
+                if (generated.reviewStatus() == ExperienceUnit.ReviewStatus.GENERATED
+                        && generated.indexStatus() == ExperienceUnit.IndexStatus.NOT_INDEXED) {
+                    break;
+                }
+            }
+            Thread.sleep(25);
+        }
+        assertThat(generated).isNotNull();
+        ExperienceUnit generatedExperience = generated;
+        assertThat(generatedExperience.reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.GENERATED);
+        assertThat(generatedExperience.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.NOT_INDEXED);
+
+        ResponseEntity<ExperienceUnit> review = rest.postForEntity(
+                "/api/v1/experiences/{id}/review:verify", reviewRequest("{\"reviewedBy\":42}"),
+                ExperienceUnit.class, generatedExperience.id());
+        assertThat(review.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(review.getBody()).isNotNull();
+        assertThat(review.getBody().reviewStatus()).isEqualTo(ExperienceUnit.ReviewStatus.VERIFIED);
+        assertThat(review.getBody().indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.NOT_INDEXED);
+        assertThat(review.getBody().reviewedBy()).isEqualTo(42L);
+        assertThat(review.getBody().reviewedAt()).isNotNull();
+
+        ResponseEntity<ExperienceUnit> publish = rest.postForEntity(
+                "/api/v1/experiences/{id}/publish", null, ExperienceUnit.class, generatedExperience.id());
+        assertThat(publish.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        ExperienceUnit published = awaitExperience(generatedExperience.id(), ExperienceUnit.ReviewStatus.PUBLISHED);
+        assertThat(published.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.INDEXED);
+        assertThat(published.vectorRef()).isEqualTo("experience-" + generatedExperience.id());
+        assertThat(lexicalIndex.allChunks()).anyMatch(chunk ->
+                chunk.id().equals("experience-" + generatedExperience.id()));
+    }
+
+    @Test
     void publishesVerifiedExperienceThroughLocalIndexes() throws Exception {
         ExperienceUnit generated = saveGeneratedExperience("publish-e2e-" + System.nanoTime());
         LocalDateTime reviewedAt = LocalDateTime.now().withNano(0);
