@@ -1,6 +1,7 @@
 package com.salesmentor.experience.domain;
 
 import java.util.List;
+import java.util.Collection;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -10,6 +11,8 @@ public interface ExperienceRepository {
     Optional<ExperienceUnit> findById(Long id);
 
     List<ExperienceUnit> findByCaseId(Long caseId);
+
+    List<ExperienceUnit> findPublishedIndexedByIds(Collection<Long> ids);
 
     boolean completeReview(Long id, ExperienceUnit.ReviewStatus target, Long reviewedBy,
                            LocalDateTime reviewedAt, int version);

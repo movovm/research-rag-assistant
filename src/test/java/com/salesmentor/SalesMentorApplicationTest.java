@@ -547,6 +547,38 @@ class SalesMentorApplicationTest {
     }
 
     @Test
+    void findsOnlyPublishedIndexedExperiencesByIds() {
+        ExperienceUnit generated = saveGeneratedExperience("admission-generated-" + System.nanoTime());
+        ExperienceUnit verified = saveGeneratedExperience("admission-verified-" + System.nanoTime());
+        ExperienceUnit failed = saveGeneratedExperience("admission-failed-" + System.nanoTime());
+        ExperienceUnit indexing = saveGeneratedExperience("admission-indexing-" + System.nanoTime());
+        ExperienceUnit published = saveGeneratedExperience("admission-published-" + System.nanoTime());
+
+        generated = replaceExperienceState(generated, ExperienceUnit.ReviewStatus.GENERATED,
+                ExperienceUnit.IndexStatus.NOT_INDEXED, null);
+        verified = replaceExperienceState(verified, ExperienceUnit.ReviewStatus.VERIFIED,
+                ExperienceUnit.IndexStatus.NOT_INDEXED, null);
+        failed = replaceExperienceState(failed, ExperienceUnit.ReviewStatus.VERIFIED,
+                ExperienceUnit.IndexStatus.FAILED, null);
+        indexing = replaceExperienceState(indexing, ExperienceUnit.ReviewStatus.PUBLISHED,
+                ExperienceUnit.IndexStatus.INDEXING, null);
+        published = replaceExperienceState(published, ExperienceUnit.ReviewStatus.PUBLISHED,
+                ExperienceUnit.IndexStatus.INDEXED, "experience-" + published.id());
+        int publishedVersion = published.version();
+
+        List<ExperienceUnit> admitted = experiences.findPublishedIndexedByIds(List.of(
+                generated.id(), verified.id(), failed.id(), indexing.id(), published.id(), Long.MAX_VALUE));
+        assertThat(admitted).extracting(ExperienceUnit::id).containsExactly(published.id());
+        assertThat(experiences.findPublishedIndexedByIds(List.of())).isEmpty();
+        assertThat(experiences.findPublishedIndexedByIds(List.of(Long.MAX_VALUE))).isEmpty();
+        assertThat(experiences.findById(published.id())).get()
+                .extracting(ExperienceUnit::reviewStatus, ExperienceUnit::indexStatus,
+                        ExperienceUnit::vectorRef, ExperienceUnit::version)
+                .containsExactly(ExperienceUnit.ReviewStatus.PUBLISHED, ExperienceUnit.IndexStatus.INDEXED,
+                        "experience-" + published.id(), publishedVersion);
+    }
+
+    @Test
     void publishesVerifiedExperienceThroughLocalIndexes() throws Exception {
         ExperienceUnit generated = saveGeneratedExperience("publish-e2e-" + System.nanoTime());
         LocalDateTime reviewedAt = LocalDateTime.now().withNano(0);
@@ -637,6 +669,16 @@ class SalesMentorApplicationTest {
                 String.format("%064x", Integer.toUnsignedLong(externalKey.hashCode())),
                 ExperienceUnit.ReviewStatus.GENERATED, ExperienceUnit.IndexStatus.NOT_INDEXED, null,
                 "local", "experience-extract-v1", null, null, 0, now, now));
+    }
+
+    private ExperienceUnit replaceExperienceState(ExperienceUnit value, ExperienceUnit.ReviewStatus reviewStatus,
+                                                  ExperienceUnit.IndexStatus indexStatus, String vectorRef) {
+        return experiences.save(new ExperienceUnit(value.id(), value.caseId(), value.scenarioType(),
+                value.objectionType(), value.salesStage(), value.customerRole(), value.triggerText(),
+                value.strategySummary(), value.recommendedQuestion(), value.evidenceQuote(), value.evidenceStart(),
+                value.evidenceEnd(), value.applicability(), value.contentHash(), reviewStatus, indexStatus, vectorRef,
+                value.extractionModel(), value.promptVersion(), value.reviewedBy(), value.reviewedAt(), value.version(),
+                value.createdAt(), value.updatedAt()));
     }
 
     private ExperienceUnit awaitExperience(Long id, ExperienceUnit.ReviewStatus status) throws Exception {

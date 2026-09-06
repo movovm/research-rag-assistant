@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 
 @Repository
@@ -60,6 +61,16 @@ public class MybatisExperienceRepository implements ExperienceRepository {
                 .set("review_status", target.name()).set("reviewed_by", reviewedBy).set("reviewed_at", reviewedAt)
                 .set("updated_at", LocalDateTime.now()).setSql("version = version + 1");
         return mapper.update(null, update) == 1;
+    }
+
+    @Override
+    public List<ExperienceUnit> findPublishedIndexedByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        QueryWrapper<ExperienceEntity> query = new QueryWrapper<>();
+        query.in("id", ids)
+                .eq("review_status", ExperienceUnit.ReviewStatus.PUBLISHED.name())
+                .eq("index_status", ExperienceUnit.IndexStatus.INDEXED.name());
+        return mapper.selectList(query).stream().map(ExperienceEntity::toDomain).toList();
     }
 
     @Override
