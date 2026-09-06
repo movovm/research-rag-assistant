@@ -276,12 +276,10 @@ class SalesMentorApplicationTest {
         ReviewTask task = reviewTasks.save(new ReviewTask(null, "day1-request", null, "day1-session",
                 "MANUFACTURING", SalesCase.SalesStage.NEGOTIATION, "PURCHASING_MANAGER", conversation,
                 "验证持久化骨架", ReviewTask.Status.PENDING, null, null, null, null, null, now, now));
-        assertThat(reviewTasks.compareAndSetStatus(task.id(), ReviewTask.Status.PENDING,
-                ReviewTask.Status.RUNNING)).isTrue();
-        assertThat(reviewTasks.compareAndSetStatus(task.id(), ReviewTask.Status.PENDING,
-                ReviewTask.Status.RUNNING)).isFalse();
+        assertThat(reviewTasks.start(task.id(), 0)).isTrue();
+        assertThat(reviewTasks.start(task.id(), 0)).isFalse();
 
-        AgentTrace trace = traces.save(new AgentTrace(null, task.id(), 1, AgentTrace.StepType.TASK,
+        AgentTrace trace = traces.append(new AgentTrace(null, task.id(), 1, AgentTrace.StepType.TASK,
                 null, "{}", "task started", "[]", 0, AgentTrace.Status.SUCCEEDED, null, now));
         assertThat(traces.findByTaskId(task.id())).extracting(AgentTrace::id).containsExactly(trace.id());
     }

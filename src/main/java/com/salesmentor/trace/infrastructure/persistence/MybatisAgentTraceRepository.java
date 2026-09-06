@@ -17,13 +17,15 @@ public class MybatisAgentTraceRepository implements AgentTraceRepository {
     }
 
     @Override
-    public AgentTrace save(AgentTrace value) {
+    public AgentTrace append(AgentTrace value) {
+        if (value == null || value.id() != null) {
+            throw new IllegalArgumentException("trace must be a new event");
+        }
         AgentTrace prepared = new AgentTrace(value.id(), value.taskId(), value.stepNo(), value.stepType(),
                 value.toolName(), value.inputJson(), value.outputSummary(), value.evidenceIds(), value.durationMs(),
                 value.status(), value.errorCode(), value.createdAt() == null ? LocalDateTime.now() : value.createdAt());
         AgentTraceEntity entity = AgentTraceEntity.fromDomain(prepared);
-        if (prepared.id() == null) mapper.insert(entity);
-        else mapper.updateById(entity);
+        mapper.insert(entity);
         return entity.toDomain();
     }
 

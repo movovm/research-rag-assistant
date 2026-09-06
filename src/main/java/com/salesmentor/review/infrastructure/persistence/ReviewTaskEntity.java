@@ -24,6 +24,9 @@ public class ReviewTaskEntity {
     private String planJson;
     private String reportJson;
     private String partialReason;
+    private long version;
+    private String failureCode;
+    private String failureReason;
     private LocalDateTime startedAt;
     private LocalDateTime finishedAt;
     private LocalDateTime createdAt;
@@ -44,6 +47,9 @@ public class ReviewTaskEntity {
         entity.planJson = value.planJson();
         entity.reportJson = value.reportJson();
         entity.partialReason = value.partialReason();
+        entity.version = value.version();
+        entity.failureCode = value.failureCode();
+        entity.failureReason = value.failureReason();
         entity.startedAt = value.startedAt();
         entity.finishedAt = value.finishedAt();
         entity.createdAt = value.createdAt();
@@ -55,6 +61,6 @@ public class ReviewTaskEntity {
         return new ReviewTask(id, requestId, userId, sessionId, industry,
                 salesStage == null ? null : SalesCase.SalesStage.valueOf(salesStage), customerRole,
                 conversationContent, reviewGoal, ReviewTask.Status.valueOf(status), planJson, reportJson,
-                partialReason, startedAt, finishedAt, createdAt, updatedAt);
+                partialReason, version, failureCode, failureReason, startedAt, finishedAt, createdAt, updatedAt);
     }
 }
