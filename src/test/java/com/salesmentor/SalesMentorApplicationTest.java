@@ -6,6 +6,10 @@ import com.salesmentor.core.LexicalIndex;
 import com.salesmentor.domain.ChatRequest;
 import com.salesmentor.domain.ChatResult;
 import com.salesmentor.domain.DocumentChunk;
+import com.salesmentor.domain.ChunkVector;
+import com.salesmentor.experience.application.ExperienceQuery;
+import com.salesmentor.experience.application.ExperienceSearchApplicationService;
+import com.salesmentor.experience.application.ExperienceSearchResult;
 import com.salesmentor.experience.domain.ExperienceRepository;
 import com.salesmentor.experience.domain.ExperienceUnit;
 import com.salesmentor.knowledge.domain.KnowledgeDocument;
@@ -16,6 +20,8 @@ import com.salesmentor.salescase.domain.SalesCase;
 import com.salesmentor.salescase.domain.SalesCaseRepository;
 import com.salesmentor.trace.domain.AgentTrace;
 import com.salesmentor.trace.domain.AgentTraceRepository;
+import com.salesmentor.port.EmbeddingProvider;
+import com.salesmentor.port.VectorStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -79,6 +85,15 @@ class SalesMentorApplicationTest {
 
     @Autowired
     private LexicalIndex lexicalIndex;
+
+    @Autowired
+    private VectorStore vectorStore;
+
+    @Autowired
+    private EmbeddingProvider embeddingProvider;
+
+    @Autowired
+    private ExperienceSearchApplicationService experienceSearch;
 
     @Autowired private TestRestTemplate rest;
 
@@ -576,6 +591,29 @@ class SalesMentorApplicationTest {
                         ExperienceUnit::vectorRef, ExperienceUnit::version)
                 .containsExactly(ExperienceUnit.ReviewStatus.PUBLISHED, ExperienceUnit.IndexStatus.INDEXED,
                         "experience-" + published.id(), publishedVersion);
+    }
+
+    @Test
+    void experienceSearchUsesMysqlAdmissionForResidualLocalIndexes() throws Exception {
+        ExperienceUnit unpublished = saveGeneratedExperience("search-residual-" + System.nanoTime());
+        ExperienceUnit publishedGenerated = saveGeneratedExperience("search-published-" + System.nanoTime());
+        DocumentChunk residual = new DocumentChunk("experience-" + unpublished.id(),
+                "experience-" + unpublished.id(), "salesmentor", "SALES_EXPERIENCE", "salesmentor",
+                "price customer needs", java.util.Map.of("experienceId", unpublished.id().toString()));
+        lexicalIndex.upsert(List.of(residual));
+        vectorStore.upsert(List.of(new ChunkVector(residual,
+                embeddingProvider.embed(residual.content(), EmbeddingProvider.InputType.DOCUMENT))));
+
+        assertThat(experiences.completeReview(publishedGenerated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, LocalDateTime.now().withNano(0), 0)).isTrue();
+        rest.postForEntity("/api/v1/experiences/{id}/publish", null, ExperienceUnit.class, publishedGenerated.id());
+        ExperienceUnit published = awaitExperience(publishedGenerated.id(), ExperienceUnit.ReviewStatus.PUBLISHED);
+
+        List<ExperienceSearchResult> results = experienceSearch.search(
+                new ExperienceQuery("price", null, null, null, null, 5));
+        assertThat(results).isNotEmpty();
+        assertThat(results).extracting(ExperienceSearchResult::experienceId)
+                .contains(published.id()).doesNotContain(unpublished.id());
     }
 
     @Test
