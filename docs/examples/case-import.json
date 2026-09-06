@@ -1,0 +1,9 @@
+{
+  "externalKey": "day7-demo-case-001",
+  "title": "制造业客户的价格异议复盘",
+  "sourceType": "USER_PROVIDED",
+  "industry": "MANUFACTURING",
+  "salesStage": "NEGOTIATION",
+  "customerRole": "BUYER",
+  "content": "客户认为当前报价高于预算，希望先确认部署范围和后续支持。销售说明了价值，但没有确认客户最在意的验收条件。"
+}

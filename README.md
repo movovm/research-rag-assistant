@@ -154,6 +154,8 @@ research-rag-assistant/
 
 问答、二轮 Query Rewrite、检索分数对比、长期记忆和文档上传的完整演示步骤见 [docs/demo-script.md](docs/demo-script.md)。建议公开到 GitHub 前按该脚本录制 GIF 或补充两张本机截图，截图中不要出现真实 API Key 或私人文档。
 
+SalesMentor V1 的任务复盘演示见 [Day 7 演示指南](docs/day7-demo.md)，能力边界见 [V1 能力说明](docs/v1-capabilities.md)。
+
 ## License
 
 [MIT](LICENSE)

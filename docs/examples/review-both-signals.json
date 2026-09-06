@@ -1,0 +1,8 @@
+{
+  "requestId": "day7-both-signals-001",
+  "industry": "MANUFACTURING",
+  "salesStage": "NEGOTIATION",
+  "customerRole": "BUYER",
+  "conversationContent": "客户提出 price objection，认为预算不足，同时询问 product deployment 的 specification 和 feature。",
+  "reviewGoal": "同时复盘价格谈判与产品部署澄清"
+}
