@@ -11,22 +11,24 @@
         <relativePath/>
     </parent>
 
-    <groupId>io.github.portfolio</groupId>
-    <artifactId>research-rag-assistant</artifactId>
+    <groupId>com.salesmentor</groupId>
+    <artifactId>salesmentor</artifactId>
     <version>1.0.0</version>
-    <name>research-rag-assistant</name>
-    <description>Research document retrieval and knowledge Q&amp;A portfolio project</description>
+    <name>salesmentor</name>
+    <description>Evidence-based sales review agent with business-aware RAG</description>
 
     <properties>
         <java.version>17</java.version>
         <langchain4j.version>0.36.2</langchain4j.version>
         <tika.version>2.9.2</tika.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -35,6 +37,24 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
         <dependency>
             <groupId>dev.langchain4j</groupId>
@@ -58,8 +78,13 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>io.projectreactor</groupId>
-            <artifactId>reactor-test</artifactId>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

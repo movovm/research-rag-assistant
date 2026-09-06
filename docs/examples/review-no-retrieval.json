@@ -1,0 +1,8 @@
+{
+  "requestId": "day7-no-retrieval-001",
+  "industry": "MANUFACTURING",
+  "salesStage": "DISCOVERY",
+  "customerRole": "BUYER",
+  "conversationContent": "客户介绍了团队规模和当前项目进度，双方约定下周继续沟通。",
+  "reviewGoal": "整理当前沟通中的待确认事项"
+}

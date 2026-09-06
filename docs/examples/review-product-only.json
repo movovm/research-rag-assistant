@@ -1,0 +1,8 @@
+{
+  "requestId": "day7-product-only-001",
+  "industry": "MANUFACTURING",
+  "salesStage": "DISCOVERY",
+  "customerRole": "TECHNICAL_BUYER",
+  "conversationContent": "客户重点询问 product deployment 的 specification、feature 和实施范围。",
+  "reviewGoal": "核对产品部署能力与规格信息"
+}

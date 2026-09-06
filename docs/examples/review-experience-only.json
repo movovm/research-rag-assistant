@@ -1,0 +1,8 @@
+{
+  "requestId": "day7-experience-only-001",
+  "industry": "MANUFACTURING",
+  "salesStage": "NEGOTIATION",
+  "customerRole": "BUYER",
+  "conversationContent": "客户提出 price objection，认为报价超出预算，并要求重新 negotiate 合同条件。",
+  "reviewGoal": "复盘价格异议和谈判推进方式"
+}

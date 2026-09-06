@@ -3,9 +3,19 @@ server:
 
 spring:
   application:
-    name: research-rag-assistant
-  codec:
-    max-in-memory-size: 10MB
+    name: salesmentor
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/salesmentor?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC}
+    username: ${MYSQL_USER:salesmentor}
+    password: ${MYSQL_PASSWORD:salesmentor}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 app:
   rag:
@@ -30,6 +40,12 @@ spring.data.redis:
   host: ${REDIS_HOST:localhost}
   port: ${REDIS_PORT:6379}
 
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
 logging:
   level:
-    io.github.portfolio.rag: INFO
+    com.salesmentor: INFO
