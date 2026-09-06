@@ -2,6 +2,8 @@ package com.salesmentor.web;
 
 import com.salesmentor.experience.application.ExperienceReviewApplicationService;
 import com.salesmentor.experience.application.ExperiencePublishApplicationService;
+import com.salesmentor.experience.application.ExperienceSearchApplicationService;
+import com.salesmentor.experience.application.ExperienceSearchResult;
 import com.salesmentor.experience.domain.ExperienceUnit;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -18,11 +20,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class ExperienceController {
     private final ExperienceReviewApplicationService service;
     private final ExperiencePublishApplicationService publishService;
+    private final ExperienceSearchApplicationService searchService;
 
     public ExperienceController(ExperienceReviewApplicationService service,
-                                ExperiencePublishApplicationService publishService) {
+                                ExperiencePublishApplicationService publishService,
+                                ExperienceSearchApplicationService searchService) {
         this.service = service;
         this.publishService = publishService;
+        this.searchService = searchService;
     }
 
     @PostMapping("/{id}/review:verify")
@@ -43,6 +48,12 @@ public class ExperienceController {
             return ResponseEntity.ok(experience);
         }
         return ResponseEntity.accepted().body(experience);
+    }
+
+    @PostMapping("/search")
+    public ResponseEntity<java.util.List<ExperienceSearchResult>> search(
+            @Valid @RequestBody ExperienceSearchRequest request) {
+        return ResponseEntity.ok(searchService.search(request.toQuery()));
     }
 
     public record ReviewRequest(@NotNull @Positive Long reviewedBy) {}

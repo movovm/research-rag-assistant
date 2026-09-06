@@ -617,6 +617,37 @@ class SalesMentorApplicationTest {
     }
 
     @Test
+    void searchesPublishedExperienceThroughApiWithBusinessFilters() throws Exception {
+        ExperienceUnit generated = saveGeneratedExperience("search-api-" + System.nanoTime());
+        assertThat(experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, LocalDateTime.now().withNano(0), 0)).isTrue();
+        rest.postForEntity("/api/v1/experiences/{id}/publish", null, ExperienceUnit.class, generated.id());
+        ExperienceUnit published = awaitExperience(generated.id(), ExperienceUnit.ReviewStatus.PUBLISHED);
+
+        ResponseEntity<List<ExperienceSearchResult>> response = rest.exchange(
+                "/api/v1/experiences/search", HttpMethod.POST,
+                new HttpEntity<>("{\"queryText\":\"price\",\"scenarioType\":\"OBJECTION_HANDLING\","
+                        + "\"objectionType\":\"PRICE\",\"salesStage\":\"NEGOTIATION\","
+                        + "\"customerRole\":\"PURCHASING_MANAGER\",\"topK\":5}",
+                        new HttpHeaders() {{ setContentType(MediaType.APPLICATION_JSON); }}),
+                new ParameterizedTypeReference<>() {});
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull().anyMatch(result -> result.experienceId().equals(published.id()));
+        ExperienceSearchResult result = response.getBody().stream()
+                .filter(value -> value.experienceId().equals(published.id())).findFirst().orElseThrow();
+        assertThat(result.caseId()).isEqualTo(published.caseId());
+        assertThat(result.triggerText()).isEqualTo(published.triggerText());
+
+        ResponseEntity<List<ExperienceSearchResult>> noMatch = rest.exchange(
+                "/api/v1/experiences/search", HttpMethod.POST,
+                new HttpEntity<>("{\"queryText\":\"price\",\"salesStage\":\"CLOSING\"}",
+                        new HttpHeaders() {{ setContentType(MediaType.APPLICATION_JSON); }}),
+                new ParameterizedTypeReference<>() {});
+        assertThat(noMatch.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(noMatch.getBody()).isEmpty();
+    }
+
+    @Test
     void publishesVerifiedExperienceThroughLocalIndexes() throws Exception {
         ExperienceUnit generated = saveGeneratedExperience("publish-e2e-" + System.nanoTime());
         LocalDateTime reviewedAt = LocalDateTime.now().withNano(0);
