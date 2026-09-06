@@ -1,6 +1,7 @@
 package com.salesmentor.web;
 
 import com.salesmentor.experience.domain.ExperienceNotFoundException;
+import com.salesmentor.experience.domain.ExperienceIndexingUnavailableException;
 import com.salesmentor.experience.domain.ExperienceStateConflictException;
 import com.salesmentor.salescase.domain.CaseStateConflictException;
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,13 @@ import java.util.UUID;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(ExperienceIndexingUnavailableException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Map<String, Object> experienceIndexingUnavailable(ExperienceIndexingUnavailableException exception) {
+        return Map.of("code", "EXPERIENCE_INDEXING_UNAVAILABLE", "message", safeMessage(exception),
+                "requestId", UUID.randomUUID().toString(), "details", Map.of());
+    }
+
     @ExceptionHandler(ExperienceStateConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public Map<String, Object> experienceConflict(ExperienceStateConflictException exception) {

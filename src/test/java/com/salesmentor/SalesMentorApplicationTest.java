@@ -2,8 +2,10 @@ package com.salesmentor;
 
 import com.salesmentor.core.ChatService;
 import com.salesmentor.core.DocumentIngestionService;
+import com.salesmentor.core.LexicalIndex;
 import com.salesmentor.domain.ChatRequest;
 import com.salesmentor.domain.ChatResult;
+import com.salesmentor.domain.DocumentChunk;
 import com.salesmentor.experience.domain.ExperienceRepository;
 import com.salesmentor.experience.domain.ExperienceUnit;
 import com.salesmentor.knowledge.domain.KnowledgeDocument;
@@ -74,6 +76,9 @@ class SalesMentorApplicationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private LexicalIndex lexicalIndex;
 
     @Autowired private TestRestTemplate rest;
 
@@ -493,6 +498,79 @@ class SalesMentorApplicationTest {
         }
     }
 
+    @Test
+    void publishesVerifiedExperienceThroughLocalIndexes() throws Exception {
+        ExperienceUnit generated = saveGeneratedExperience("publish-e2e-" + System.nanoTime());
+        LocalDateTime reviewedAt = LocalDateTime.now().withNano(0);
+        assertThat(experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, reviewedAt, generated.version())).isTrue();
+
+        ResponseEntity<ExperienceUnit> response = rest.postForEntity(
+                "/api/v1/experiences/{id}/publish", null, ExperienceUnit.class, generated.id());
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+        ExperienceUnit published = awaitExperience(generated.id(), ExperienceUnit.ReviewStatus.PUBLISHED);
+        assertThat(published.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.INDEXED);
+        assertThat(published.vectorRef()).isEqualTo("experience-" + generated.id());
+        DocumentChunk indexed = lexicalIndex.allChunks().stream()
+                .filter(chunk -> chunk.id().equals("experience-" + generated.id()))
+                .findFirst().orElseThrow();
+        assertThat(indexed.documentId()).isEqualTo(indexed.id());
+        assertThat(indexed.source()).isEqualTo("salesmentor");
+        assertThat(indexed.documentType()).isEqualTo("SALES_EXPERIENCE");
+        assertThat(indexed.project()).isEqualTo("salesmentor");
+        assertThat(indexed.metadata()).containsEntry("experienceId", generated.id().toString())
+                .containsEntry("caseId", generated.caseId().toString())
+                .containsEntry("reviewedBy", "42")
+                .containsEntry("sourceEvidenceQuote", generated.evidenceQuote());
+    }
+
+    @Test
+    void publishedExperienceCanBePublishedAgainWithoutChangingState() throws Exception {
+        ExperienceUnit generated = saveGeneratedExperience("publish-idempotent-" + System.nanoTime());
+        assertThat(experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, LocalDateTime.now().withNano(0), 0)).isTrue();
+        rest.postForEntity("/api/v1/experiences/{id}/publish", null, ExperienceUnit.class, generated.id());
+        ExperienceUnit published = awaitExperience(generated.id(), ExperienceUnit.ReviewStatus.PUBLISHED);
+
+        ResponseEntity<ExperienceUnit> repeat = rest.postForEntity(
+                "/api/v1/experiences/{id}/publish", null, ExperienceUnit.class, generated.id());
+        assertThat(repeat.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(repeat.getBody()).isEqualTo(published);
+        assertThat(lexicalIndex.allChunks().stream()
+                .filter(chunk -> chunk.id().equals("experience-" + generated.id())).count()).isEqualTo(1);
+    }
+
+    @Test
+    void indexingExperienceCannotBePublishedConcurrently() {
+        ExperienceUnit generated = saveGeneratedExperience("publish-indexing-" + System.nanoTime());
+        assertThat(experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, LocalDateTime.now().withNano(0), 0)).isTrue();
+        assertThat(experiences.claimIndexing(generated.id(), 1)).isTrue();
+
+        ResponseEntity<String> response = rest.postForEntity(
+                "/api/v1/experiences/{id}/publish", null, String.class, generated.id());
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).contains("EXPERIENCE_STATE_CONFLICT");
+    }
+
+    @Test
+    void failedIndexCanBeExplicitlyRetriedThroughPublishApi() throws Exception {
+        ExperienceUnit generated = saveGeneratedExperience("publish-retry-" + System.nanoTime());
+        assertThat(experiences.completeReview(generated.id(), ExperienceUnit.ReviewStatus.VERIFIED,
+                42L, LocalDateTime.now().withNano(0), 0)).isTrue();
+        assertThat(experiences.claimIndexing(generated.id(), 1)).isTrue();
+        assertThat(experiences.markIndexFailed(generated.id(), 2)).isTrue();
+
+        ResponseEntity<ExperienceUnit> response = rest.postForEntity(
+                "/api/v1/experiences/{id}/publish", null, ExperienceUnit.class, generated.id());
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        ExperienceUnit published = awaitExperience(generated.id(), ExperienceUnit.ReviewStatus.PUBLISHED);
+        assertThat(published.indexStatus()).isEqualTo(ExperienceUnit.IndexStatus.INDEXED);
+        assertThat(published.vectorRef()).isEqualTo("experience-" + generated.id());
+        assertThat(lexicalIndex.allChunks()).anyMatch(chunk -> chunk.id().equals("experience-" + generated.id()));
+    }
+
     private HttpEntity<String> reviewRequest(String body) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -511,5 +589,17 @@ class SalesMentorApplicationTest {
                 String.format("%064x", Integer.toUnsignedLong(externalKey.hashCode())),
                 ExperienceUnit.ReviewStatus.GENERATED, ExperienceUnit.IndexStatus.NOT_INDEXED, null,
                 "local", "experience-extract-v1", null, null, 0, now, now));
+    }
+
+    private ExperienceUnit awaitExperience(Long id, ExperienceUnit.ReviewStatus status) throws Exception {
+        ExperienceUnit value = null;
+        for (int i = 0; i < 100; i++) {
+            value = experiences.findById(id).orElseThrow();
+            if (value.reviewStatus() == status && value.indexStatus() == ExperienceUnit.IndexStatus.INDEXED) {
+                return value;
+            }
+            Thread.sleep(25);
+        }
+        return value;
     }
 }
